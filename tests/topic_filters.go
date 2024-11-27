@@ -59,11 +59,12 @@ func main() {
 
 		wg.Add(1)
 		go subscribe(*numClients-1, "environment/sensors/#", *broker, version)
+
 		wg.Add(1)
 		go subscribe(*numClients, "$SYS/broker/uptime", *broker, version)
 
 		// Wait for 5 minutes
-		time.Sleep(500 * time.Second)
+		time.Sleep(60 * time.Second)
 
 		// Signal all goroutines to exit
 		exitCleanup = true
@@ -126,9 +127,7 @@ func subscribe(threadID int, topic, broker string, version int) {
 	defer client.Disconnect(250)
 
 	token := client.Subscribe(topic, 0, func(client mqtt.Client, msg mqtt.Message) {
-		if threadID == 102 {
-			fmt.Printf("Topic: %v, Message: %v\n", msg.Topic(), string(msg.Payload()))
-		}
+		fmt.Printf("Topic: %v, Message: %v\n", msg.Topic(), string(msg.Payload()))
 	})
 	if token.Wait() && token.Error() != nil {
 		fmt.Println("Error subscribing to topic:", token.Error())
