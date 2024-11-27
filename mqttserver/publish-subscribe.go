@@ -974,6 +974,7 @@ func (c *MQTTClient) isSystemTopic(topicName string) bool {
 }
 
 // PublishSystemStats publishes system information to $SYS topics
+
 func (c *MQTTClient) publishSystemStats() {
 	s := c.server
 	for {
@@ -986,7 +987,6 @@ func (c *MQTTClient) publishSystemStats() {
 			"$SYS/broker/uptime":            uptime,
 		}
 
-		// Add system load if available
 		if load, err := cpu.Percent(time.Second, false); err == nil {
 			systemTopics["$SYS/broker/load"] = fmt.Sprintf("%.2f", load[0])
 		}
@@ -996,13 +996,16 @@ func (c *MQTTClient) publishSystemStats() {
 			s.mu.Lock()
 			clients := s.subscriptions.findMatchingClients(topic)
 			s.mu.Unlock()
-			for client, _ := range clients {
-				client.sendPublish([]byte(value), len([]byte(value)))
+			for client := range clients {
+				err := client.sendPublish([]byte(value), len([]byte(value)))
+				if err != nil {
+					s.logger.Printf("Error sending publish to client: %v", err)
+				}
 			}
+			s.logger.Printf("Published to %s: %s", topic, value)
 		}
 
 		s.logger.Printf("System stats updated: %v", systemTopics)
-
-		time.Sleep(60 * time.Second) // Update every minute
+		time.Sleep(10 * time.Second) // Update every minute
 	}
 }
