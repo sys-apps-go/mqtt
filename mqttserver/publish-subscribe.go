@@ -311,10 +311,16 @@ func (c *MQTTClient) handleSubscribe() error {
 		topic := topicType{name: topicFilter, isSystem: c.isSystemTopic(topicFilter)}
 
 		if topic.isSystem {
+			allowed := false
 			for _, allowedTopic := range s.allowedSystemTopics {
-				if !strings.Contains(allowedTopic, topicFilter) {
-					return fmt.Errorf("subscription to system topic %s not allowed", topicFilter)
+				if topicFilter == allowedTopic || strings.HasPrefix(allowedTopic, topicFilter+"/#") {
+					allowed = true
+					break
 				}
+			}
+			if !allowed {
+				fmt.Println("subscription to system topic not allowed", topicFilter)
+				return fmt.Errorf("subscription to system topic %s not allowed", topicFilter)
 			}
 		}
 
@@ -971,20 +977,31 @@ func (c *MQTTClient) isSystemTopic(topicName string) bool {
 func (c *MQTTClient) publishSystemStats() {
 	s := c.server
 	for {
-		// Publish number of connected clients
+		// Update system topics
 		clientCount := s.clientCount
-		s.systemTopics["$SYS/broker/clients/connected"] = fmt.Sprintf("%d", clientCount)
-
-		// Publish broker uptime
 		uptime := time.Since(s.startTime).String()
-		s.systemTopics["$SYS/broker/uptime"] = uptime
 
-		// Publish system load
-		if load, err := cpu.Percent(time.Second, false); err == nil {
-			s.systemTopics["$SYS/broker/load"] = fmt.Sprintf("%.2f", load[0])
+		systemTopics := map[string]string{
+			"$SYS/broker/clients/connected": fmt.Sprintf("%d", clientCount),
+			"$SYS/broker/uptime":            uptime,
 		}
 
-		s.logger.Printf("System stats updated: %v", s.systemTopics)
+		// Add system load if available
+		if load, err := cpu.Percent(time.Second, false); err == nil {
+			systemTopics["$SYS/broker/load"] = fmt.Sprintf("%.2f", load[0])
+		}
+
+		// Publish each system topic
+		for topic, value := range systemTopics {
+			s.mu.Lock()
+			clients := s.subscriptions.findMatchingClients(topic)
+			s.mu.Unlock()
+			for client, _ := range clients {
+				client.sendPublish([]byte(value), len([]byte(value)))
+			}
+		}
+
+		s.logger.Printf("System stats updated: %v", systemTopics)
 
 		time.Sleep(60 * time.Second) // Update every minute
 	}

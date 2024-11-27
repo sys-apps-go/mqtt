@@ -195,7 +195,7 @@ type MQTTClient struct {
 	remainingLength     int
 	currentReadOffset   int
 	tcpConn             *net.TCPConn
-	keepAlive           int16 // Keep alive interval in seconds
+	keepAlive           int16  // Keep alive interval in seconds
 	cleanStart          bool   // Clean start flag
 	Username            string // Username
 	password            string // Password
@@ -259,23 +259,24 @@ func NewTrieMsgs() *TrieMsgs {
 
 // MQTTServer represents an MQTT server
 type MQTTServer struct {
-	packetBufPool       sync.Pool
-	useSyncPool         bool
-	Broker              string // Broker address (e.g., "localhost:1883")
-	subscriptions       *Trie
-	retainedMessages    *TrieMsgs
-	matchingClients     sync.Map // Using sync.Map for concurrent access
-	verbose             bool
-	debug               bool
-	trace               bool
-	mu                  sync.Mutex
-	subscribers         map[string]Subscriber
-	connections         map[string]net.Conn
-	systemTopics        map[string]string
-	allowedSystemTopics []string
-	clientCount         int
-	startTime           time.Time
-	logger              *log.Logger
+	packetBufPool           sync.Pool
+	useSyncPool             bool
+	Broker                  string // Broker address (e.g., "localhost:1883")
+	subscriptions           *Trie
+	retainedMessages        *TrieMsgs
+	matchingClients         sync.Map // Using sync.Map for concurrent access
+	verbose                 bool
+	debug                   bool
+	trace                   bool
+	mu                      sync.Mutex
+	subscribers             map[string]Subscriber
+	connections             map[string]net.Conn
+	systemTopics            map[string]string
+	allowedSystemTopics     []string
+	clientCount             int
+	startTime               time.Time
+	logger                  *log.Logger
+	systemTopicsInitialized bool
 }
 
 // NewMQTTServer creates a new MQTTServer instance
@@ -376,7 +377,7 @@ func main() {
 	logfile := filepath.Join(os.TempDir(), *loggerPath)
 	server.initLogger(logfile)
 
-	server.allowedSystemTopics = []string{"$SYS/broker/clients/connected", "$SYS/broker/uptime"}
+	server.allowedSystemTopics = []string{"$SYS/broker/clients/connected", "$SYS/broker/uptime", "$SYS/broker/load"}
 
 	fmt.Println("MQTT server is listening on port 1883...")
 
@@ -469,9 +470,13 @@ func (c *MQTTClient) handleClientCmds() {
 		s.mu.Unlock()
 	}()
 
+	if !s.systemTopicsInitialized {
+		go c.publishSystemStats()
+		s.systemTopicsInitialized = true
+	}
 	for {
 		if c.keepAliveExceeded {
-			fmt.Println("Exiting keep alive timeout exceeded", c.clientID)
+			fmt.Println("Keep alive timeout exceeded, exiting", c.clientID)
 			return
 		}
 		packets, data, dataSize, allPublish, allSameQoS, topicName, err := c.processMQTTPackets()
