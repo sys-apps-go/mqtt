@@ -267,6 +267,7 @@ type MQTTServer struct {
 	matchingClients     sync.Map // Using sync.Map for concurrent access
 	verbose             bool
 	debug               bool
+	trace               bool
 	mu                  sync.Mutex
 	subscribers         map[string]Subscriber
 	connections         map[string]net.Conn
@@ -346,7 +347,8 @@ func main() {
 	brokerAddress := flag.String("b", ":1883", "Broker address")
 	quicAddress := flag.String("q", ":4242", "QUIC Server address")
 	verbose := flag.Bool("v", false, "Verbose mode")
-	debugOption := flag.Bool("d", false, "Debug trace mode")
+	debugOption := flag.Bool("d", false, "Debug mode")
+	traceOption := flag.Bool("t", false, "Trace mode")
 	useSyncPool := flag.Bool("s", false, "Sync Pool or Allocate from Heap, default is from Heap")
 	loggerPath := flag.String("l", "mqttserver.log", "Path of log file")
 	flag.Parse()
@@ -354,6 +356,7 @@ func main() {
 	server := NewMQTTServer()
 	server.verbose = *verbose
 	server.debug = *debugOption
+	server.trace = *traceOption
 	server.startTime = time.Now()
 	server.useSyncPool = *useSyncPool
 
@@ -509,7 +512,7 @@ func (c *MQTTClient) handleClientCmds() {
 			c.hdrStart = pkt.hdrStart
 			c.remainingBytes = pkt.remainingBytes
 
-			if s.debug {
+			if s.trace {
 				s.logger.Printf("Received Message of type: %v %v", getPacketType(cmdType), c.clientID)
 			}
 			switch cmdType {
@@ -726,7 +729,7 @@ func (c *MQTTClient) handleConnect() error {
 		}
 	}
 
-	if s.debug {
+	if s.trace {
 		s.logger.Printf("CONNECT packet: Protocol Level: %v, Keep Alive %v, client ID: %v, User Name: %v, Password: %v",
 			protocolLevel, keepAlive, clientID, userName, password)
 		if willFlag {

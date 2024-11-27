@@ -36,7 +36,7 @@ func main() {
 	subQoS = flag.Int("s", 0, "Client QoS for Subscription")
 	numMessages = flag.Int("m", 25000, "Number of messages")
 	numClients = flag.Int("c", 200, "Number of publishers/subscribers")
-	connType := flag.String("t", "tcp", "Connection type")
+	connType := "tcp"
 	flag.Parse()
 
 	clientsPub = make([]clientInfo, *numClients)
@@ -47,7 +47,7 @@ func main() {
 		Broker:                 *broker,
 		QuicServer:             *quicServer,
 		ProtocolLevel:          byte(*versionMQTT),
-		ConnType:               *connType,
+		ConnType:               connType,
 		KeepAlive:              60,
 		CleanStart:             true,
 		UserName:               "user",

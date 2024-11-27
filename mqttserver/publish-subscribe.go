@@ -537,7 +537,7 @@ func (c *MQTTClient) handlePubrel() error {
 
 	// Read packet identifier
 	packetIdentifier := binary.BigEndian.Uint16(remainingBytes[0:2])
-	if s.debug {
+	if s.trace {
 		s.logger.Printf("Received PUBREL for Packet Identifier: %v %v", packetIdentifier, c.clientID)
 	}
 
@@ -547,7 +547,7 @@ func (c *MQTTClient) handlePubrel() error {
 		s.logger.Printf("Error reading PUBCOMP: %v", err)
 		return err
 	}
-	if s.debug {
+	if s.trace {
 		s.logger.Printf("Received PUBREL from Client: %v", c.clientID)
 	}
 
@@ -584,7 +584,7 @@ func (c *MQTTClient) sendPuback(packetIdentifier uint16) error {
 		s.logger.Printf("Error sending packet: %v", err.Error())
 		return err
 	}
-	if s.debug {
+	if s.trace {
 		s.logger.Printf("Sent PUBACK to Client: %v", c.clientID)
 	}
 	return nil
@@ -676,7 +676,7 @@ func (c *MQTTClient) sendPubrec(packetIdentifier uint16) error {
 		s.logger.Printf("Error sending packet: %v", err.Error())
 		return err
 	}
-	if s.debug {
+	if s.trace {
 		s.logger.Printf("Sent PUBREC to Client: %v", c.clientID)
 	}
 	c.cmdType = PUBREL
@@ -751,7 +751,7 @@ func (c *MQTTClient) handleUnsubscribe() error {
 		topicFilter := string(remainingBytes[offset : offset+int(topicFilterLength)])
 		offset += int(topicFilterLength)
 
-		if s.debug {
+		if s.trace {
 			s.logger.Printf("Received UNSUBSCRIBE for topic filter '%s'", topicFilter)
 		}
 
@@ -820,7 +820,7 @@ func (c *MQTTClient) handlePuback() error {
 	// Handle the PUBACK (e.g., remove the message from the pending list)
 	c.acknowledgePacket(packetIdentifier)
 
-	if s.debug {
+	if s.trace {
 		s.logger.Printf("Received PUBACK for packet identifier %v", packetIdentifier)
 	}
 
@@ -840,7 +840,7 @@ func (c *MQTTClient) handlePubrec() error {
 		return err
 	}
 
-	if s.debug {
+	if s.trace {
 		s.logger.Printf("Received PUBREC for packet identifier %v from Client: %v ", packetIdentifier, c.clientID)
 	}
 
@@ -871,7 +871,7 @@ func (c *MQTTClient) sendPubrel(packetIdentifier uint16) error {
 		s.logger.Printf("Error sending packet: %v", err.Error())
 		return err
 	}
-	if s.debug {
+	if s.trace {
 		s.logger.Printf("Sent PUBREL to Client: %v", c.clientID)
 	}
 	return nil
@@ -885,7 +885,7 @@ func (c *MQTTClient) handlePubcomp() error {
 	// Handle the PUBCOMP (e.g., remove the message from the pending acknowledgment list)
 	c.acknowledgePacket(packetIdentifier)
 
-	if s.debug {
+	if s.trace {
 		s.logger.Printf("Received PUBCOMP from Client: %v", c.clientID)
 	}
 
@@ -930,7 +930,7 @@ func (c *MQTTClient) storeSubscription(topicFilter string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.subscriptions.insert(topicFilter, c)
-	if s.debug {
+	if s.trace {
 		s.logger.Printf("Stored subscription for topic filter %v", topicFilter)
 	}
 }
