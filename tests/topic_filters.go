@@ -13,30 +13,52 @@ import (
 var wg sync.WaitGroup
 var exitCleanup bool
 
+type clientInfo struct {
+	name        string
+	subCount    int
+	subAckCount int
+	pubCount    int
+	pubAckCount int
+	wgDone      bool
+}
+
+var clientsPub []clientInfo
+var clientsSub []clientInfo
+
 func main() {
 	broker := flag.String("b", "localhost:1883", "Broker address")
 	versionMQTT := flag.Int("v", 4, "MQTT Version")
+	numClients := flag.Int("c", 100, "Number of Pub/Sub")
 	flag.Parse()
 	version := *versionMQTT
+
+	*numClients = *numClients + 1
+	clientsPub = make([]clientInfo, *numClients)
+	clientsSub = make([]clientInfo, *numClients)
+
+	for i := 0; i < *numClients; i++ {
+		clientsPub[i].name = fmt.Sprintf("client.publish.%v", i+1)
+		clientsSub[i].name = fmt.Sprintf("client.subscribe.%v", i+1)
+	}
 
 	for {
 		exitCleanup = false
 		wg = sync.WaitGroup{}
 		
 		// Start 5 subscribers
-		for i := 0; i < 100; i++ {
+		for i := 0; i < *numClients-1; i++ {
 			wg.Add(1)
-			go subscribe(fmt.Sprintf("environment/sensors/path%d", i+1), *broker, version, i+1)
+			go subscribe(i+1, fmt.Sprintf("environment/sensors/path%d", i+1), *broker, version)
 		}
 
 		// Start 5 publishers
-		for i := 0; i < 100; i++ {
+		for i := 0; i < *numClients-1; i++ {
 			wg.Add(1)
-			go publish(i, fmt.Sprintf("environment/sensors/path%d", i+1), *broker, version, i+1)
+			go publish(i+1, fmt.Sprintf("environment/sensors/path%d", i+1), *broker, version)
 		}
 
 		wg.Add(1)
-		go subscribe("environment/sensors/#", *broker, version, 101)
+		go subscribe(*numClients, "environment/sensors/#", *broker, version)
 
 		// Wait for 5 minutes
 		time.Sleep(5 * time.Second)
@@ -51,12 +73,12 @@ func main() {
 	}
 }
 
-func publish(threadID int, topic, broker string, version int, id int) {
+func publish(threadID int, topic, broker string, version int) {
 	defer wg.Done()
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(broker)
 	opts.SetProtocolVersion(uint(version))
-	opts.SetClientID(fmt.Sprintf("mqtt_client_pub_%d_%d", threadID, id))
+	opts.SetClientID(clientsPub[threadID-1].name)
 
 	client := mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
@@ -87,12 +109,12 @@ func publish(threadID int, topic, broker string, version int, id int) {
 	}
 }
 
-func subscribe(topic, broker string, version int, id int) {
+func subscribe(threadID int, topic, broker string, version int) {
 	defer wg.Done()
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(broker)
 	opts.SetProtocolVersion(uint(version))
-	opts.SetClientID(fmt.Sprintf("mqtt_client_sub_%d", id))
+	opts.SetClientID(clientsSub[threadID-1].name)
 
 	client := mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {

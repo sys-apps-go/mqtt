@@ -187,18 +187,16 @@ Median: 34958 msg/sec
 Native Client: 200 Clients, 100000 messages/client:
 
 go run *go -m 100000
-
-Final Statistics:
-Total Published: 20000000 (120512.30/s)
-Total Subscribed: 20000000 (120329.98/s)
-Publish Time: 165.96 seconds
-Subscribe Time: 166.21 seconds
+Total Published: 20000000 (151580.07/s)
+Total Subscribed: 20000000 (151292.13/s)
+Publish Time: 131.94 seconds
+Subscribe Time: 132.19 seconds
 Published/Subscribed 20000000 messages with QoS 0
 
 go run *go -m 100000 -p 1 -s 1
-
-Total Published: 20000000 (15398.88/s)
-Total Subscribed: 20000000 (15395.92/s)
-Publish   Time: 1298.80 seconds
-Subscribe Time: 1299.05 seconds
+Total Published: 20000000 (18404.25/s)
+Total Subscribed: 20000000 (18400.00/s)
+Publish Time: 1086.71 seconds
+Subscribe Time: 1086.96 seconds
 Published/Subscribed 20000000 messages with QoS 1
+

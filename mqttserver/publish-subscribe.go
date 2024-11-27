@@ -81,6 +81,8 @@ func (c *MQTTClient) processMQTTPacketsTCP_QUIC() ([]Packet, []byte, int, bool, 
 	allPublishCmds := true
 	for index < n {
 		if index+1 >= n {
+			c.partialBuf[0] = c.packetBuf[index]
+			c.partialLength = 1
 			break // Not enough data for a complete packet
 		}
 

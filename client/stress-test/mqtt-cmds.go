@@ -571,10 +571,25 @@ func (c *Client) buildPublishPacket(topic, message string, qos byte) []byte {
 
 // readPuback reads and processes a PUBACK packet: QoS = 1
 func (c *Client) readPuback() error {
-	header, err := c.readByte()
+	var header byte
+	var err error
+
+	header, err = c.readByte()
 	if err != nil {
 		return err
 	}
+
+	if header&0xF0 == PINGRESP {
+		_, err = c.readByte()
+		if err != nil {
+			return err
+		}
+		header, err = c.readByte()
+		if err != nil {
+			return err
+		}
+	}
+
 	if header&0xF0 != PUBACK {
 		return fmt.Errorf("unexpected packet type: %d", header&0xF0)
 	}
@@ -595,10 +610,25 @@ func (c *Client) readPuback() error {
 
 // readPubrec reads and processes a PUBREC packet: Qos = 2: Read PUBREC -> Send PUBREL -> Read PUBCOMP
 func (c *Client) readPubrec() error {
-	header, err := c.readByte()
+	var header byte
+	var err error
+
+	header, err = c.readByte()
 	if err != nil {
 		return err
 	}
+
+	if header&0xF0 == PINGRESP {
+		_, err = c.readByte()
+		if err != nil {
+			return err
+		}
+		header, err = c.readByte()
+		if err != nil {
+			return err
+		}
+	}
+
 	if header&0xF0 != PUBREC {
 		return fmt.Errorf("unexpected packet type: %d", header&0xF0)
 	}
@@ -712,6 +742,9 @@ func (c *Client) startMsgSubscription(topic string, qos byte, callback func(stri
 		packets, err := c.processMQTTPackets()
 
 		if err != nil {
+			if err.Error() == "read timeout" {
+				continue
+			}
 			return err
 		}
 
@@ -788,6 +821,7 @@ func (c *Client) startMsgSubscription(topic string, qos byte, callback func(stri
 					return err
 				}
 				c.pendingAckMu.Unlock()
+			case PINGRESP:
 			}
 		}
 	}
@@ -896,13 +930,29 @@ func (c *Client) sendPubrel(packetIdentifier uint16, remainingBytes []byte, rema
 }
 
 func (c *Client) readPubcomp() error {
-	header, err := c.readByte()
+	var header byte
+	var err error
+
+	header, err = c.readByte()
 	if err != nil {
 		return err
 	}
+
+	if header&0xF0 == PINGRESP {
+		_, err = c.readByte()
+		if err != nil {
+			return err
+		}
+		header, err = c.readByte()
+		if err != nil {
+			return err
+		}
+	}
+
 	if header&0xF0 != PUBCOMP {
 		return fmt.Errorf("unexpected packet type: %d", header&0xF0)
 	}
+
 	// Read the remaining length
 	remainingLength, err := c.readByte()
 	if err != nil {
