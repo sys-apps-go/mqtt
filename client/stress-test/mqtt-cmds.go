@@ -7,13 +7,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	quic "github.com/quic-go/quic-go"
 	"io"
 	"net"
 	"os"
 	"strings"
 	"sync"
 	"time"
-	quic "github.com/quic-go/quic-go"
 )
 
 const (
@@ -92,11 +92,15 @@ type Client struct {
 	pendingAckMu      sync.Mutex
 	packetIdentifier  int16
 	packetBuf         []byte
-	partialBuf          []byte
+	partialBuf        []byte
 	currentReadOffset int
-	partialLength       int
+	partialLength     int
 	disconnected      bool
 	publishPktsAcked  int
+	networkActivity   bool
+	socketMu          sync.Mutex
+	mu                sync.Mutex
+	endConnection     bool
 }
 
 type Packet struct {
@@ -227,6 +231,7 @@ func (c *Client) Connect(config ConfigParameters) error {
 		return fmt.Errorf("failed to read CONNACK packet: %v", err)
 	}
 
+	go c.keepAliveThread()
 	return nil
 }
 
@@ -498,10 +503,10 @@ func encodeVariableByteIntegerArray(buf *bytes.Buffer, length int) {
 // NewClient creates a new MQTT client
 func NewClient(clientID string, keepAlive uint16, connType string) *Client {
 	c := &Client{
-		ClientID:  clientID,
-		packetBuf: make([]byte, DefaultPacketSize),
-		partialBuf:  make([]byte, 1024),
-		connType:  connType,
+		ClientID:   clientID,
+		packetBuf:  make([]byte, DefaultPacketSize),
+		partialBuf: make([]byte, 1024),
+		connType:   connType,
 	}
 	c.config.KeepAlive = keepAlive
 	return c
@@ -527,6 +532,9 @@ func (c *Client) Publish(topic, message string, qos byte) error {
 	} else if qos == 2 {
 		return c.readPubrec()
 	}
+	c.mu.Lock()
+	c.networkActivity = true
+	c.mu.Unlock()
 	return nil
 }
 
@@ -931,41 +939,21 @@ func (c *Client) readPubcomp() error {
  */
 func (c *Client) SendPingReq() error {
 	// PINGREQ fixed header (type 12, flags 0x00)
-	fixedHeader := byte(PINGREQ)
+	fixedHeader := PINGREQ
 
-	// Fixed header
-	packet := []byte{fixedHeader}
+	// Packet structure: fixed header + remaining length
+	packet := []byte{
+		fixedHeader, // First byte: packet type
+		0x00,        // Second byte: Remaining Length (always 0 for PINGREQ)
+	}
 
-	// Send the PUBREL packet
+	// Send the PINGREQ packet
 	_, err := c.conn.Write(packet)
 	if err != nil {
-		fmt.Println("Error writing PINGREQ packet:", err)
-		return err
+		return fmt.Errorf("error writing PINGREQ packet: %w", err)
 	}
 	if c.verbose {
 		fmt.Println("Sent PINGREQ")
-	}
-
-	header, err := c.readByte()
-	if err != nil {
-		return err
-	}
-
-	if header&0xF0 != PINGRESP {
-		return fmt.Errorf("unexpected packet type: %d, expected PINGRESP", header&0xF0)
-	}
-
-	remainingLength, err := c.readByte()
-	if err != nil {
-		return err
-	}
-
-	if remainingLength != 0 {
-		return fmt.Errorf("PINGRESP remaining size: expected %v, got %v\n", 0, remainingLength)
-	}
-
-	if c.verbose {
-		fmt.Println("Received PINGRESP")
 	}
 
 	return nil
@@ -1255,6 +1243,8 @@ func isRetryableError(err error) bool {
 }
 
 func (c *Client) writePacket(packet []byte) error {
+	c.socketMu.Lock()
+	defer c.socketMu.Unlock()
 	switch c.connType {
 	case "tcp":
 		_, err := c.conn.Write(packet)
@@ -1306,4 +1296,26 @@ func (c *Client) readFull(buf []byte) ([]byte, error) {
 	default:
 	}
 	return nil, fmt.Errorf("unknown connection type: %s", c.connType)
+}
+
+func (c *Client) keepAliveThread() {
+	ticker := time.NewTicker(time.Duration(c.config.KeepAlive-10) * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			c.mu.Lock()
+			if c.networkActivity {
+				c.networkActivity = false
+				c.mu.Unlock()
+			} else {
+				c.mu.Unlock()
+				err := c.SendPingReq()
+				if err != nil {
+					return
+				}
+			}
+		}
+	}
 }

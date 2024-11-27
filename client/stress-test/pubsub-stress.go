@@ -149,14 +149,9 @@ func main() {
 				}
 				clientsPub[idx].pubCount++
 				clientsPub[idx].pubAckCount++
-				if clientsPub[idx].pubCount % 10000 == 0 {
-					for clientsPub[idx].pubCount > clientsSub[idx].subCount {
-						time.Sleep(time.Millisecond * 10)
-					}
-				}
 			}
 			for clientsPub[idx].pubAckCount != clientsPub[idx].pubCount {
-				time.Sleep(time.Second)
+				time.Sleep(time.Millisecond * 100)
 			}
 			clientPub.Disconnect()
 		}(i)
@@ -195,7 +190,7 @@ func printStats() {
 
 		pubPerSecond := int(float64(totalPub-lastTotalPub) / 1.0)
 		subPerSecond := int(float64(totalSub-lastTotalSub) / 1.0)
-		fmt.Printf("\rPublished: %d (%.2f/s), Subscribed: %d (%.2f/s)", 
+		fmt.Printf("\rPublished: %d (%.2f/s), Subscribed: %d (%.2f/s)",
 			totalPub, float64(pubPerSecond), totalSub, float64(subPerSecond))
 		lastTotalPub = totalPub
 		lastTotalSub = totalSub
@@ -220,6 +215,5 @@ func printFinalStats() {
 	fmt.Printf("Total Subscribed: %d (%.2f/s)\n", totalSub, subPerSecond)
 	fmt.Printf("Publish Time: %.2f seconds\n", pubElapsedSeconds)
 	fmt.Printf("Subscribe Time: %.2f seconds\n", subElapsedSeconds)
-	fmt.Printf("Published/Subscribed %v messages with QoS %v\n", (*numClients) * (*numMessages), *pubQoS)
+	fmt.Printf("Published/Subscribed %v messages with QoS %v\n", (*numClients)*(*numMessages), *pubQoS)
 }
-

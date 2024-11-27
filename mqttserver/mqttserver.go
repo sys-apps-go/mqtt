@@ -186,8 +186,8 @@ type MQTTClient struct {
 	cmdType             byte
 	packetBuf           []byte
 	cmdBuf              []byte
-	partialBuf            []byte
-	partialLength         int
+	partialBuf          []byte
+	partialLength       int
 	reader              *bufio.Reader
 	remainingBytes      []byte
 	hdrStart            []byte
@@ -195,7 +195,7 @@ type MQTTClient struct {
 	remainingLength     int
 	currentReadOffset   int
 	tcpConn             *net.TCPConn
-	keepAlive           uint16 // Keep alive interval in seconds
+	keepAlive           int16 // Keep alive interval in seconds
 	cleanStart          bool   // Clean start flag
 	Username            string // Username
 	password            string // Password
@@ -218,6 +218,9 @@ type MQTTClient struct {
 	willRetain          bool
 	pubPktsRcvd         int
 	subPktsSent         int
+	keepAliveExceeded   bool
+	networkActivity     bool
+	socketLock          sync.Mutex
 }
 
 type topicType struct {
@@ -310,7 +313,7 @@ func NewMQTTClient(conn net.Conn, server *MQTTServer) *MQTTClient {
 		reader:          bufio.NewReader(conn),
 		server:          server,
 		pendingAck:      make(map[uint16][]byte),
-		partialBuf:        make([]byte, 1024),
+		partialBuf:      make([]byte, 1024),
 		pendingMessages: make(map[uint16]Packet),
 		cmdBuf:          make([]byte, maxAckBufSize),
 	}
@@ -322,7 +325,7 @@ func NewMQTTClientWs(conn *websocketConn, server *MQTTServer) *MQTTClient {
 		connWs:          conn,
 		server:          server,
 		pendingAck:      make(map[uint16][]byte),
-		partialBuf:        make([]byte, 1024),
+		partialBuf:      make([]byte, 1024),
 		pendingMessages: make(map[uint16]Packet),
 		cmdBuf:          make([]byte, maxAckBufSize),
 	}
@@ -333,7 +336,7 @@ func NewMQTTClientQUIC(stream quic.Stream, server *MQTTServer) *MQTTClient {
 		stream:          stream,
 		server:          server,
 		pendingAck:      make(map[uint16][]byte),
-		partialBuf:        make([]byte, 1024),
+		partialBuf:      make([]byte, 1024),
 		pendingMessages: make(map[uint16]Packet),
 		cmdBuf:          make([]byte, maxAckBufSize),
 	}
@@ -464,8 +467,15 @@ func (c *MQTTClient) handleClientCmds() {
 	}()
 
 	for {
+		if c.keepAliveExceeded {
+			fmt.Println("Exiting keep alive timeout exceeded", c.clientID)
+			return
+		}
 		packets, data, dataSize, allPublish, allSameQoS, topicName, err := c.processMQTTPackets()
 		if err != nil {
+			if err.Error() == "read timeout" {
+				continue
+			}
 			s.logger.Printf("Error processing MQTT packets: %v %v", err, c.clientID)
 			return
 		}
@@ -473,6 +483,8 @@ func (c *MQTTClient) handleClientCmds() {
 		if len(packets) == 0 {
 			continue
 		}
+
+		c.networkActivity = true
 
 		if allPublish {
 			c.pubPktsRcvd += len(packets)
@@ -602,7 +614,8 @@ func (c *MQTTClient) handleConnect() error {
 	willRetain := (connectFlag & 0x20) != 0
 	offset += 1
 
-	keepAlive := int(binary.BigEndian.Uint16(remainingBytes[offset : offset+2]))
+	keepAlive := int16(binary.BigEndian.Uint16(remainingBytes[offset : offset+2]))
+	c.keepAlive = keepAlive
 	offset += 2
 
 	if c.connType == "tcp" {
@@ -746,6 +759,7 @@ func (c *MQTTClient) handleConnect() error {
 		return fmt.Errorf("unsupported protocol version: %v", protocolLevel)
 	}
 
+	go c.startKeepAliveMonitor()
 	return nil
 }
 
@@ -1670,5 +1684,38 @@ func printServerStats() {
 
 		lastPublishReceived = currentPublishReceived
 		lastSubscribeSent = currentSubscribeSent
+	}
+}
+
+func (c *MQTTClient) startKeepAliveMonitor() {
+	ticker := time.NewTicker(time.Duration(time.Duration(c.keepAlive) * time.Second))
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			c.mu.Lock()
+			if c.networkActivity {
+				c.networkActivity = false
+				c.mu.Unlock()
+			} else {
+				// No activity, extend timer to 1.5 times
+				ticker.Reset(time.Duration(float64(c.keepAlive) * 1.5))
+				c.mu.Unlock()
+
+				// Check again after the extended period
+				<-ticker.C
+				c.mu.Lock()
+				if !c.networkActivity {
+					// Still no activity, close connection
+					c.mu.Unlock()
+					c.keepAliveExceeded = true
+					return
+				}
+				c.networkActivity = false
+				ticker.Reset(time.Duration(c.keepAlive))
+				c.mu.Unlock()
+			}
+		}
 	}
 }
